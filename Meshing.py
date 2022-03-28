@@ -70,15 +70,13 @@ class Mesh():
                       'top' : np.array([i * (ny) for i in range(nx)]),
                       'right' : np.array([i for i in range(ny)]),
                       'left' : np.array([(nx-1)*ny + i for i in range(ny)])}
-    
+
     def make_mesh(self):
         '''
         Generate mesh from corners and nx, ny
         Sets self.XY to integration point coords
         with shape (2, nx * ny)
-
         self.ELS is shape ((nx-1) * (ny-1), 4), and gives the 4 integration points corresponding tro each node
-
         self.DOF is shape ((nx-1) * (ny-1), 4) and gives DOF for each element
         '''
         self.XY = np.array(self.node_dist(self.corners, self.nx, self.ny))
@@ -87,9 +85,11 @@ class Mesh():
         nnodes = nelx*nely
         self.ELS = np.zeros((nnodes, 4), dtype=int)
 
-        for i in range(nelx):
-            for j in range(nely):
+        for j in range(nelx):
+            for i in range(nely):
                 self.ELS[j+i*nelx, :] = [j+i*self.nx, j+i*self.nx+1,j+(i+1)*self.nx+1, j+(i+1)*self.nx]
+
+
 
         self.DOF = np.zeros((nnodes, 8), dtype=int)
 
@@ -105,7 +105,6 @@ class Mesh():
 
         #Fully Pinned
         cond = self.pins[:, 0] * self.pins[:, 1]
-
         if sum(cond):
             plt.plot(self.XY[cond==True, 0], self.XY[cond==True, 1], 'sg', label='Fully Pinned')
 
@@ -130,10 +129,7 @@ class Mesh():
             for i in range(4):                             #loop over all nodes within an element
                 for j in range(len(self.ELS)):                  #loop over all elements
                     sh=0.01
-                    try: 
-                        plt.text(self.XY[self.ELS[j,i],0]+sh,self.XY[self.ELS[j,i],1]+sh, self.ELS[j,i])
-                    except:
-                        pass
+                    plt.text(self.XY[self.ELS[j,i],0]+sh,self.XY[self.ELS[j,i],1]+sh, self.ELS[j,i])
 
         # Set chart title.
         plt.title(title, fontsize=19)
@@ -146,6 +142,14 @@ class Mesh():
 
         plt.show()
 
+    def set_pins(self, pins):
+        '''
+        Defines pinning conditions
+        pins should be a shape (nnodes, 2) boolean array
+        pins[i, j] pins node i in the xj direction
+        '''
+        self.pins = pins
+
     def copy(self):
         mesh = Mesh(self.corners, self.nx, self.ny, self.node_dist)
 
@@ -157,74 +161,74 @@ class Mesh():
         mesh.forces = self.forces
         return mesh
     
-    def __add__(self, mesh2):
-        mesh1 = self.copy()
-        mesh1.pins = self.pins
-        mesh1.forces = self.forces
-        mesh1 += mesh2
-        return mesh1
+    # def __add__(self, mesh2):
+    #     mesh1 = self.copy()
+    #     mesh1.pins = self.pins
+    #     mesh1.forces = self.forces
+    #     mesh1 += mesh2
+    #     return mesh1
     
-    def __iadd__(self, mesh2):
-        '''
-        Glue two meshes together via overlapping nodes
+    # def __iadd__(self, mesh2):
+    #     '''
+    #     Glue two meshes together via overlapping nodes
 
-        Requires there to be a shared edge, with same number of nodes in that direction
-        Ie, two shared corners, and one of nx or ny to be the same
+    #     Requires there to be a shared edge, with same number of nodes in that direction
+    #     Ie, two shared corners, and one of nx or ny to be the same
 
-        Also requires the coord_func to be the same
-        '''
-        # Check if coord_func bias method is the same
-        assert self.node_dist == mesh2.node_dist
-        # Find shared edge
-        mesh1_shared, mesh2_shared = shared_pairs(self.XY, mesh2.XY)
+    #     Also requires the coord_func to be the same
+    #     '''
+    #     # Check if coord_func bias method is the same
+    #     assert self.node_dist == mesh2.node_dist
+    #     # Find shared edge
+    #     mesh1_shared, mesh2_shared = shared_pairs(self.XY, mesh2.XY)
 
-        mesh2_ELS_copy = mesh2.ELS.copy()
+    #     mesh2_ELS_copy = mesh2.ELS.copy()
 
-        offset = np.max(self.ELS) + 1
-        for i in range(len(mesh2_ELS_copy)):
-            for j in range(4):
-                # Replace node ids in mesh2 with duplicates in self
-                mask = (mesh2_shared == mesh2_ELS_copy[i, j])
-                if np.sum(mask):
-                    # ELS[i, j] is a shared node
-                    mesh2_ELS_copy[i, j] = mesh1_shared[mask]
-                else:
-                    # no shared nodes
-                    mesh2_ELS_copy[i, j] += offset
+    #     offset = np.max(self.ELS) + 1
+    #     for i in range(len(mesh2_ELS_copy)):
+    #         for j in range(4):
+    #             # Replace node ids in mesh2 with duplicates in self
+    #             mask = (mesh2_shared == mesh2_ELS_copy[i, j])
+    #             if np.sum(mask):
+    #                 # ELS[i, j] is a shared node
+    #                 mesh2_ELS_copy[i, j] = mesh1_shared[mask]
+    #             else:
+    #                 # no shared nodes
+    #                 mesh2_ELS_copy[i, j] += offset
         
         
-        for i, node in enumerate(mesh2_shared[::-1]):
-            # Account for missing IDS (shift)
-            mesh2_ELS_copy[mesh2_ELS_copy > node + offset] -= 1
+    #     for i, node in enumerate(mesh2_shared[::-1]):
+    #         # Account for missing IDS (shift)
+    #         mesh2_ELS_copy[mesh2_ELS_copy > node + offset] -= 1
 
 
-        mask = np.ones(mesh2.XY.shape[0], dtype=bool)
-        mask[mesh2_shared] = False
+    #     mask = np.ones(mesh2.XY.shape[0], dtype=bool)
+    #     mask[mesh2_shared] = False
 
-        total_XY = np.append(self.XY, mesh2.XY[mask], axis=0) # mask out duplicated nodes
+    #     total_XY = np.append(self.XY, mesh2.XY[mask], axis=0) # mask out duplicated nodes
 
-        # Merge pins
-        self.pins = np.append(self.pins, mesh2.pins[mask], axis=0)
+    #     # Merge pins
+    #     self.pins = np.append(self.pins, mesh2.pins[mask], axis=0)
 
-        #Merge forces
-        self.forces = np.append(self.forces, mesh2.forces[mask], axis=0)
+    #     #Merge forces
+    #     self.forces = np.append(self.forces, mesh2.forces[mask], axis=0)
         
-        #mask = np.ones(mesh2.XY.shape[0], dtype=bool)
-        #total_XY = np.append(self.XY, mesh2.XY, axis=0)
-        total_ELS = np.append(self.ELS, mesh2_ELS_copy, axis=0)
-        self.XY = total_XY
-        self.ELS = total_ELS
+    #     #mask = np.ones(mesh2.XY.shape[0], dtype=bool)
+    #     #total_XY = np.append(self.XY, mesh2.XY, axis=0)
+    #     total_ELS = np.append(self.ELS, mesh2_ELS_copy, axis=0)
+    #     self.XY = total_XY
+    #     self.ELS = total_ELS
 
-        nnodes = len(total_ELS[:, 0])
-        self.DOF = np.zeros((nnodes, 8), dtype=int)
+    #     nnodes = len(total_ELS[:, 0])
+    #     self.DOF = np.zeros((nnodes, 8), dtype=int)
 
-        # Regenerate dofs
-        for i in range(nnodes):
-            self.DOF[i, :] = [self.ELS[i,0]*2, self.ELS[i,1]*2-1, self.ELS[i,1]*2, self.ELS[i,1]*2+1, self.ELS[i,2]*2, self.ELS[i,2]*2+1, self.ELS[i,3]*2, self.ELS[i,3]*2+1]
+    #     # Regenerate dofs
+    #     for i in range(nnodes):
+    #         self.DOF[i, :] = [self.ELS[i,0]*2, self.ELS[i,1]*2-1, self.ELS[i,1]*2, self.ELS[i,1]*2+1, self.ELS[i,2]*2, self.ELS[i,2]*2+1, self.ELS[i,3]*2, self.ELS[i,3]*2+1]
 
-        self.all_corners = np.unique(np.append(self.all_corners, mesh2.all_corners, axis=0), axis=0)
+    #     self.all_corners = np.unique(np.append(self.all_corners, mesh2.all_corners, axis=0), axis=0)
 
-        return self
+    #     return self
 
     def pin_edge(self, edge, direction):
         '''
