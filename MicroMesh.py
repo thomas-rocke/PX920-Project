@@ -8,16 +8,17 @@ Microscale mesh solving
 from Meshing import Mesh
 from FEMSolver import FEM
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 
 class MicroMesh(Mesh):
-  def __init__(self, nx, ny):
+  def __init__(self, nx:int, ny:int, E1:float, E2:float, nu1:float, nu2:float, percent2:float):
     corners = np.array([[0, 1],
                         [1, 1],
                         [1, 0],
                         [0, 0]])
-    super().__init__(corners, nx, ny)
+    super().__init__(corners, nx, ny, E1, nu1)
 
     self.fixed_corners = np.array([0, nx-1, nx*(ny-1), nx * ny - 1])
 
@@ -63,13 +64,28 @@ class MicroMesh(Mesh):
     self.T[self.master_DOFs, :] = np.identity(2*self.num_masters)
     self.T[self.slave_DOFs, :] = -1 * np.linalg.inv(self.Gs) @ self.Gm
 
+
+    mat_2_elements = np.random.choice(self.ELS, int(percent2 * self.nnodes), replace=False)
+
+    for el in mat_2_elements:
+      el.E = E2
+      el.nu = nu2
+
     
 
+class MicroSolver(FEM):
+  def solve(self)
 
 
 
-
-mesh = MicroMesh(4, 4)
-for el in mesh.ELS:
-  print(el.XY)
-mesh.plot()
+mesh = MicroMesh(10, 10, 20E8, 0.4, 20E7, 0.2, 0.4)
+mesh.apply_load((0, 1), 'top')
+mesh.pin_edge('bottom', 0)
+mesh.pin_edge('bottom', 1)
+mesh.pin_edge('left', 0)
+mesh.pin_edge('right', 0)
+solver = FEM(mesh)
+solver.eval_K()
+solver.solve()
+solver.show_deformation(1)
+plt.show()

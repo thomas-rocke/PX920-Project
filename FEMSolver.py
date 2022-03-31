@@ -39,19 +39,6 @@ def Plane_Strain(x, y, E, nu):
     C = np.array([[1.0 - nu, nu, 0.0], [nu, 1.0-nu, 0.0], [0.0, 0.0, 0.5*(1.0-2 * nu)]])
     return const*C
 
-def xi_from_x(x):
-    '''
-    Find xi from x coord
-    '''
-    return x - 1.0
-
-
-def eta_from_y_xi(y, xi):
-    '''
-    Find eta from y coord and xi
-    '''
-    return (8 * y - 5)/(3 - xi)
-
 
 def N(xi, eta):
     '''Nodal functions; returns a vector as a function of xi, eta'''
@@ -73,14 +60,12 @@ def J_inv(xi, eta):
 
 
 class FEM():
-    def __init__(self, mesh:Mesh, E, nu, elasticity_func = Plane_Strain, quad_points=2):
+    def __init__(self, mesh:Mesh, elasticity_func = Plane_Strain, quad_points=2):
         '''
         Initialise FEM solver
         '''
 
         self.mesh = mesh 
-        self.E = E
-        self.nu = nu
         self.elasticity = elasticity_func
         self.quad_points = quad_points
 
@@ -124,7 +109,7 @@ class FEM():
         
         return B
     
-    def Gauss_quad(self, corners):
+    def Gauss_quad(self, corners, E, nu):
         '''
         Perform Gauss Quadrature integration using self.quad_points**2 total points
         '''
@@ -132,7 +117,7 @@ class FEM():
         weights = gauss_weights[self.quad_points]
         k_element = np.zeros((8, 8))
 
-        C = self.elasticity(*corners[0, :], self.E, self.nu)
+        C = self.elasticity(*corners[0, :], E, nu)
         for i in range(self.quad_points):
             for j in range(self.quad_points):
                 xi = points[i]
@@ -152,17 +137,17 @@ class FEM():
         # Reset K to 0
         self.K = np.zeros((2 * self.nnodes, 2 * self.nnodes))
         for i in tqdm(range(self.mesh.ELS.shape[0]), desc="Evaluating elemental Ks"):
-            element = self.mesh.ELS[i, :]
+            element = self.mesh.ELS[i]
             # Find local k matrix
-            corners = self.mesh.XY[element, :]
-            k_element = self.Gauss_quad(corners)
+            corners = element.XY
+            k_element = self.Gauss_quad(corners, element.E, element.nu)
 
             # Add local matrices together
-            self.K[np.ix_(self.mesh.DOF[i, :], self.mesh.DOF[i, :])] += k_element
+            self.K[np.ix_(element.DOF, element.DOF)] += k_element
 
     def solve(self):
         '''
-        Solves the FEM problem given by the mesh, pinning, loading, and material properties
+        Solves the Homogeneous FEM problem given by the mesh, pinning, loading, and material properties
         '''
         # Compute K matrix
         self.eval_K()
@@ -173,7 +158,7 @@ class FEM():
         K_ff = self.K[is_pinned == True, :][:, is_pinned == True]
 
         Forces = self.mesh.forces.flatten()[is_pinned == False]
-        
+
         disps = np.linalg.solve(K_ee, Forces)
 
         reactions = K_ef.T @ disps
@@ -189,9 +174,9 @@ class FEM():
         plt.plot(old_XY[:, 0], old_XY[:, 1], 'sk', label='Undeformed shape')
         plt.plot(new_XY[:, 0], new_XY[:, 1], 'sr', label='Deformed Shape')
 
-        for i in range(len(self.mesh.ELS)):
-            plt.fill(old_XY[self.mesh.ELS[i, :], 0], old_XY[self.mesh.ELS[i, :], 1], edgecolor='k', fill=False)
-            plt.fill(new_XY[self.mesh.ELS[i, :], 0], new_XY[self.mesh.ELS[i, :], 1], edgecolor='r', fill=False)
+        for el in self.mesh.ELS:
+            plt.fill(old_XY[el.nodes, 0], old_XY[el.nodes, 1], edgecolor='k', fill=False)
+            plt.fill(new_XY[el.nodes, 0], new_XY[el.nodes, 1], edgecolor='r', fill=False)
         # Set chart title.
         plt.title("Mesh Deformation under loading", fontsize=19)
         # Set x axis label.
@@ -213,7 +198,7 @@ class FEM():
         self.Strains = np.zeros((nels*(lin_samples_per_elem)**2, 3)) # strains for each evaluation point
         self.Stresses = np.zeros_like((self.Strains))
         self.Displacements = np.zeros_like((self.coords))
-        self.Forces = np.zeros_like((self.coords))
+        self.Forces = np.zeros_like((self.coords), dtype=float)
 
 
         xis = np.linspace(-1, 1, lin_samples_per_elem)

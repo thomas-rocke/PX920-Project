@@ -74,7 +74,7 @@ class Mesh():
         self.node_dist = coord_func
         self.make_mesh()
         self.pins = np.array([False] * 2 * nx * ny).reshape((nx*ny, 2))
-        self.forces = np.zeros_like(self.pins)
+        self.forces = np.zeros_like(self.pins, dtype=float)
 
         self.edges = {'bottom' : np.array([ny * (i + 1) - 1 for i in range(nx)]),
                       'top' : np.array([i * (ny) for i in range(nx)]),
