@@ -28,20 +28,26 @@ class MicroMesh(Mesh):
     self.vert_master = self.vert_slave + (nx - 1)
     self.hor_master = self.hor_slave + nx*(ny-1)
 
-    self.all_slaves = np.sort(np.append(self.vert_slave, self.hor_slave))
-    self.slave_DOFs = np.sort(np.append(2 * self.all_slaves, 2*self.all_slaves + 1))
+    self.all_slaves = np.append(self.vert_slave, self.hor_slave)
+    self.slave_DOFs = np.append(2 * self.all_slaves, 2*self.all_slaves + 1)
+
+    #self.all_masters = np.append(self.vert_master, self.hor_master)
+    #self.master_DOFs = np.append(2*self.all_masters, 2*self.all_masters + 1)
+
+    self.all_corners = np.array([0, nx-1, (ny - 1) * nx, ny * nx - 1])
+    self.corner_DOFs = np.append(2*self.all_corners, 2*self.all_corners + 1)
+    self.num_corners = 4
 
     self.all_IDs = np.array(range(nx * ny))
-    self.free_nodes = np.sort(np.array([ID for ID in self.all_IDs if ID not in self.all_slaves]))
-    self.free_DOFs = np.sort(np.append(2 * self.free_nodes, 2 * self.free_nodes + 1))
+    self.free_nodes = np.array([ID for ID in self.all_IDs if ID not in self.all_slaves and ID not in self.all_corners])
+    self.free_DOFs = np.append(2 * self.free_nodes, 2 * self.free_nodes + 1)
 
-    self.all_masters = np.sort(np.append(self.vert_master, self.hor_master))
-    self.master_DOFs = np.sort(np.append(2*self.all_masters, 2*self.all_masters + 1))
+    self.pins[self.all_corners, :] = True
 
     self.nnodes = nx * ny
     self.num_slaves = (nx + ny - 4)
-    self.num_masters = self.num_slaves
-
+    self.num_masters = self.nnodes - self.num_slaves - self.num_corners
+    '''
     G = np.zeros((2*self.nnodes, 2*self.nnodes))
 
     # Master node DOF
@@ -58,10 +64,16 @@ class MicroMesh(Mesh):
     
     self.Gs = G[np.ix_(self.slave_DOFs, self.slave_DOFs)]
     
-    self.Gm = G[np.ix_(self.slave_DOFs, self.master_DOFs)]
+    self.Gm = G[np.ix_(self.slave_DOFs, self.master_DOFs)]'''
+
+    self.Gs = -1 * np.identity(len(self.slave_DOFs))
+    self.Gm = np.zeros((len(self.slave_DOFs), len(self.free_DOFs)))
+    
+    for i in range(len(self.slave_DOFs)):
+      self.Gm[i, i] = 1
 
     self.T = np.zeros((2*self.nnodes, 2*self.num_masters))
-    self.T[self.master_DOFs, :] = np.identity(2*self.num_masters)
+    self.T[self.free_DOFs, :] = np.identity(2*self.num_masters)
     self.T[self.slave_DOFs, :] = -1 * np.linalg.inv(self.Gs) @ self.Gm
 
 
@@ -74,18 +86,31 @@ class MicroMesh(Mesh):
     
 
 class MicroSolver(FEM):
-  def solve(self)
+  @property
+  def T(self):
+    return self.mesh.T
+  
+  def solve(self):
+    self.eval_K()
+    K_m = (self.T.T @ self.K) @ self.T
+    
+    is_pinned = self.mesh.pins.flatten()
 
+    masters = self.mesh.free_DOFs
+    K_ee = K_m[is_pinned[masters] == False, :][:, is_pinned[masters] == False]
 
+    Forces = (self.T.T @ self.mesh.forces.flatten())[is_pinned[masters] == False]
 
-mesh = MicroMesh(10, 10, 20E8, 0.4, 20E7, 0.2, 0.4)
+    d_m = np.linalg.solve(K_ee, Forces)
+    self.displacements = self.T @ d_m
+
+mesh = MicroMesh(15, 15, 20E9, 0.4, 10E8, 0.2, 0.4)
 mesh.apply_load((0, 1), 'top')
-mesh.pin_edge('bottom', 0)
-mesh.pin_edge('bottom', 1)
-mesh.pin_edge('left', 0)
-mesh.pin_edge('right', 0)
-solver = FEM(mesh)
+mesh.apply_load((0.5, 0), 'left')
+
+#mesh.plot()
+solver = MicroSolver(mesh)
 solver.eval_K()
 solver.solve()
-solver.show_deformation(1)
+solver.show_deformation(3)
 plt.show()
