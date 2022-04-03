@@ -31,8 +31,8 @@ class MicroMesh(Mesh):
     self.all_slaves = np.append(self.vert_slave, self.hor_slave)
     self.slave_DOFs = np.append(2 * self.all_slaves, 2*self.all_slaves + 1)
 
-    #self.all_masters = np.append(self.vert_master, self.hor_master)
-    #self.master_DOFs = np.append(2*self.all_masters, 2*self.all_masters + 1)
+    self.all_masters = np.append(self.vert_master, self.hor_master)
+    self.master_DOFs = np.append(2*self.all_masters, 2*self.all_masters + 1)
 
     self.all_corners = np.array([0, nx-1, (ny - 1) * nx, ny * nx - 1])
     self.corner_DOFs = np.append(2*self.all_corners, 2*self.all_corners + 1)
@@ -66,12 +66,17 @@ class MicroMesh(Mesh):
     
     self.Gm = G[np.ix_(self.slave_DOFs, self.master_DOFs)]'''
 
-    self.Gs = -1 * np.identity(len(self.slave_DOFs))
-    self.Gm = np.zeros((len(self.slave_DOFs), len(self.free_DOFs)))
+    #self.Gs = -1 * np.identity(len(self.slave_DOFs))
+    #self.Gm = np.zeros((len(self.slave_DOFs), len(self.free_DOFs)))
     
-    for i in range(len(self.slave_DOFs)):
-      self.Gm[i, i] = 1
+    #self.Gm[self.slave_DOFs, self.master_DOFs] = 1
 
+    G = np.zeros((2*self.nnodes, 2*self.nnodes))
+    G[self.slave_DOFs, self.slave_DOFs] = -1
+    G[self.slave_DOFs, self.master_DOFs] = 1
+
+    self.Gs = G[np.ix_(self.slave_DOFs, self.slave_DOFs)]
+    self.Gm = G[np.ix_(self.slave_DOFs, self.free_DOFs)]
     self.T = np.zeros((2*self.nnodes, 2*self.num_masters))
     self.T[self.free_DOFs, :] = np.identity(2*self.num_masters)
     self.T[self.slave_DOFs, :] = -1 * np.linalg.inv(self.Gs) @ self.Gm
@@ -104,13 +109,50 @@ class MicroSolver(FEM):
     d_m = np.linalg.solve(K_ee, Forces)
     self.displacements = self.T @ d_m
 
-mesh = MicroMesh(15, 15, 20E9, 0.4, 10E8, 0.2, 0.4)
-mesh.apply_load((0, 1), 'top')
-mesh.apply_load((0.5, 0), 'left')
+    self.dm = d_m
+    self.ds = self.displacements[self.mesh.slave_DOFs]
+  
+  def show_periodic_deformation(self, magnification=1):
+    disps = -magnification * self.displacements
+
+    old_XY = self.mesh.XY
+    new_XY = self.mesh.XY + disps.reshape((self.nnodes, 2))
+    plt.plot(old_XY[:, 0], old_XY[:, 1], 'sk', label='Undeformed shape')
+    plt.plot(new_XY[:, 0], new_XY[:, 1], 'sr', label='Deformed Shape')
+
+    for el in self.mesh.ELS:
+        plt.fill(old_XY[el.nodes, 0], old_XY[el.nodes, 1], edgecolor='k', fill=False)
+        plt.fill(new_XY[el.nodes, 0], new_XY[el.nodes, 1], edgecolor='r', fill=False)
+    
+    for neigh in [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [1, -1], [-1, 1]]:
+      old = old_XY + neigh
+      new = new_XY + neigh
+      for el in self.mesh.ELS:
+        plt.fill(old[el.nodes, 0], old[el.nodes, 1], edgecolor='k', fill=False, alpha=0.3)
+        plt.fill(new[el.nodes, 0], new[el.nodes, 1], edgecolor='r', fill=False, alpha=0.3)
+    
+    
+    
+    # Set chart title.
+    plt.title("Mesh Deformation under loading", fontsize=19)
+    # Set x axis label.
+    plt.xlabel("$x_1$", fontsize=10)
+    # Set y axis label.
+    plt.ylabel("$x_2$", fontsize=10)
+
+    plt.legend()
+
+mesh = MicroMesh(6, 6, 10E9, 0.32, 80E8, 0.22, 0.45)
+mesh.apply_load((0, 2), 'top')
+#mesh.apply_load((0.5, 0), 'left')
+#mesh.apply_load((-0.2, 0.1), 'right')
+
+print(mesh.all_slaves)
+print(mesh.all_masters)
 
 #mesh.plot()
 solver = MicroSolver(mesh)
 solver.eval_K()
 solver.solve()
-solver.show_deformation(3)
+solver.show_periodic_deformation(1)
 plt.show()
