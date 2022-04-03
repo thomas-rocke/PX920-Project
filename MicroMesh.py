@@ -5,12 +5,12 @@ Microscale mesh solving
 '''
 
 
-from Meshing import Mesh
-from FEMSolver import FEM
+from cProfile import label
+from Meshing import Mesh, Element
+from FEMSolver import FEM, gauss_eval_points, gauss_weights, J
 import numpy as np
 import matplotlib.pyplot as plt
-
-
+from tqdm import tqdm
 
 class MicroMesh(Mesh):
   def __init__(self, nx:int, ny:int, E1:float, E2:float, nu1:float, nu2:float, percent2:float):
@@ -19,6 +19,13 @@ class MicroMesh(Mesh):
                         [1, 0],
                         [0, 0]])
     super().__init__(corners, nx, ny, E1, nu1)
+
+    self.E1 = E1
+    self.E2 = E2
+    self.nu1 = nu1
+    self.nu2 = nu2
+    self.frac2 = percent2
+    self.frac1 = 1 - percent2
 
     self.fixed_corners = np.array([0, nx-1, nx*(ny-1), nx * ny - 1])
 
@@ -47,29 +54,6 @@ class MicroMesh(Mesh):
     self.nnodes = nx * ny
     self.num_slaves = (nx + ny - 4)
     self.num_masters = self.nnodes - self.num_slaves - self.num_corners
-    '''
-    G = np.zeros((2*self.nnodes, 2*self.nnodes))
-
-    # Master node DOF
-    G[np.ix_(2*self.vert_slave, 2*self.vert_master)] = 1.0
-    G[np.ix_(2*self.hor_slave, 2*self.hor_master)] = 1.0
-    G[np.ix_(2*self.vert_slave + 1, 2*self.vert_master + 1)] = 1.0
-    G[np.ix_(2*self.hor_slave + 1, 2*self.hor_master + 1)] = 1.0
-
-    # Slave node DOF
-    G[2*self.vert_slave, 2*self.vert_slave] = -1
-    G[2*self.hor_slave, 2*self.hor_slave] = -1
-    G[2*self.vert_slave + 1, 2*self.vert_slave + 1] = -1
-    G[2*self.hor_slave + 1, 2*self.hor_slave + 1] = -1
-    
-    self.Gs = G[np.ix_(self.slave_DOFs, self.slave_DOFs)]
-    
-    self.Gm = G[np.ix_(self.slave_DOFs, self.master_DOFs)]'''
-
-    #self.Gs = -1 * np.identity(len(self.slave_DOFs))
-    #self.Gm = np.zeros((len(self.slave_DOFs), len(self.free_DOFs)))
-    
-    #self.Gm[self.slave_DOFs, self.master_DOFs] = 1
 
     G = np.zeros((2*self.nnodes, 2*self.nnodes))
     G[self.slave_DOFs, self.slave_DOFs] = -1
@@ -88,13 +72,29 @@ class MicroMesh(Mesh):
       el.E = E2
       el.nu = nu2
 
+
     
 
 class MicroSolver(FEM):
   @property
   def T(self):
     return self.mesh.T
-  
+
+  def Voigt(self):
+    C_1 = self.elasticity(self.mesh.E1, self.mesh.nu1)
+    C_2 = self.elasticity(self.mesh.E2, self.mesh.nu2)
+
+    print(self.mesh.nu1)
+
+    return self.mesh.frac1 * C_1 + self.mesh.frac2 * C_2
+
+  def Reuss(self):
+    C_1 = self.elasticity(self.mesh.E1, self.mesh.nu1)
+    C_2 = self.elasticity(self.mesh.E2, self.mesh.nu2)
+
+    return 1/(self.mesh.frac1 / C_1 + self.mesh.frac2 / C_2)
+
+
   def solve(self):
     self.eval_K()
     K_m = (self.T.T @ self.K) @ self.T
@@ -130,9 +130,7 @@ class MicroSolver(FEM):
       for el in self.mesh.ELS:
         plt.fill(old[el.nodes, 0], old[el.nodes, 1], edgecolor='k', fill=False, alpha=0.3)
         plt.fill(new[el.nodes, 0], new[el.nodes, 1], edgecolor='r', fill=False, alpha=0.3)
-    
-    
-    
+
     # Set chart title.
     plt.title("Mesh Deformation under loading", fontsize=19)
     # Set x axis label.
@@ -142,17 +140,80 @@ class MicroSolver(FEM):
 
     plt.legend()
 
-mesh = MicroMesh(6, 6, 10E9, 0.32, 80E8, 0.22, 0.45)
+  def r_vec(self, eps):
+    r_vec = np.zeros(2*self.mesh.nnodes)
+
+    points = gauss_eval_points[self.quad_points]
+    weights = gauss_weights[self.quad_points]
+    for e in tqdm(range(len(self.mesh.ELS)), desc="Calculating elemental Rs"):
+      element = self.mesh.ELS[e]
+      r_vec_e = np.zeros((8))
+      C = self.elasticity(element.E, element.nu)
+      for i in range(self.quad_points):
+        for j in range(self.quad_points):
+          xi = points[i]
+          eta = points[j]
+
+          B = self.strain_displacement(element.XY, xi, eta)
+          J = self.dN(xi, eta) @ element.XY
+
+          r_vec_e += B.T @ C @ eps * np.linalg.det(J) * weights[i] * weights[j]
+      r_vec[np.ix_(element.DOF)] += r_vec_e
+    return r_vec
+
+  def sigma(self, eps):
+    disps = self.displacements
+    points = gauss_eval_points[self.quad_points]
+    weights = gauss_weights[self.quad_points]
+    sigma = np.zeros((3))
+    vol = 0
+    for e in tqdm(range(len(self.mesh.ELS)), desc=r"Calculating elemental $\sigma$s"):
+      element = self.mesh.ELS[e]
+      C = self.elasticity(element.E, element.nu)
+      d = disps[element.DOF]
+      for i in range(self.quad_points):
+        for j in range(self.quad_points):
+          xi = points[i]
+          eta = points[j]
+          B = self.strain_displacement(element.XY, xi, eta)
+          J = self.dN(xi, eta) @ element.XY
+
+          sigma += C @ (B @ d + eps) * np.linalg.det(J) * weights[i] * weights[j]
+          vol += np.linalg.det(J)
+    return sigma / vol
+
+  def homogenize(self):
+    epss = [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+
+    C = np.zeros((3, 3))
+
+    for i, eps in enumerate(epss):
+      self.mesh.forces = self.r_vec(eps)
+      C[:, i] = self.sigma(eps)
+    return C
+
+
+
+        
+
+
+
+
+
+
+
+mesh = MicroMesh(5, 5, 10E9, 80E9, 0.32, 0.22, 0.45)
 mesh.apply_load((0, 2), 'top')
 #mesh.apply_load((0.5, 0), 'left')
 #mesh.apply_load((-0.2, 0.1), 'right')
 
-print(mesh.all_slaves)
-print(mesh.all_masters)
-
 #mesh.plot()
 solver = MicroSolver(mesh)
-solver.eval_K()
+
+print(solver.homogenize())
+print(solver.Voigt())
+print(solver.Reuss())
+
+print(np.max(solver.displacements))
 solver.solve()
-solver.show_periodic_deformation(1)
-plt.show()
+solver.show_deformation(10)

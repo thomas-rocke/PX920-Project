@@ -27,13 +27,13 @@ gauss_weights = { # Weights for Gaussian Quadrature integration
 }
 
 
-def Plane_Stress(x, y, E, nu):
+def Plane_Stress(E, nu):
     '''C matrix in the case of plane stress'''
     const = E/(1.0-nu*nu)
     C = np.array([[1.0, nu, 0.0], [nu, 1.0, 0.0], [0.0, 0.0, 0.5*(1.0-nu)]])
     return const*C
 
-def Plane_Strain(x, y, E, nu):
+def Plane_Strain(E, nu):
     '''C matrix in the case of plane strain'''
     const = E/(1.0-nu)/(1 + nu)
     C = np.array([[1.0 - nu, nu, 0.0], [nu, 1.0-nu, 0.0], [0.0, 0.0, 0.5*(1.0-2 * nu)]])
@@ -88,11 +88,7 @@ class FEM():
         Find the strain-displacement matrix for the element given by corners, xi, eta
         '''
 
-        nat_coords = np.array([[-1, 1, 1, -1],[-1, -1, 1, 1]]) # Natural (square) coord system
-        
-        dN = np.zeros((2,4)) # Gradient of Shape functions
-        dN[0,:]=(1/4)*nat_coords[0,:]*(1+nat_coords[1,:]*eta)
-        dN[1,:]=(1/4)*nat_coords[1,:]*(1+nat_coords[0,:]*xi)
+        dN = self.dN(xi, eta)
 
         # Real-space Jacobian
         Jmat = dN @ corners
@@ -106,9 +102,16 @@ class FEM():
         B[1,1::2] = dNdx[1,:]
         B[2,0::2] = dNdx[1,:]
         B[2,1::2] = dNdx[0,:]
-        
         return B
-    
+
+    def dN(self, xi, eta):
+        nat_coords = np.array([[-1, 1, 1, -1],[-1, -1, 1, 1]]) # Natural (square) coord system
+        
+        dN = np.zeros((2,4)) # Gradient of Shape functions
+        dN[0,:]=(1/4)*nat_coords[0,:]*(1+nat_coords[1,:]*eta)
+        dN[1,:]=(1/4)*nat_coords[1,:]*(1+nat_coords[0,:]*xi)
+
+        return dN
     def Gauss_quad(self, corners, E, nu):
         '''
         Perform Gauss Quadrature integration using self.quad_points**2 total points
@@ -117,7 +120,7 @@ class FEM():
         weights = gauss_weights[self.quad_points]
         k_element = np.zeros((8, 8))
 
-        C = self.elasticity(*corners[0, :], E, nu)
+        C = self.elasticity(E, nu)
         for i in range(self.quad_points):
             for j in range(self.quad_points):
                 xi = points[i]
@@ -211,7 +214,7 @@ class FEM():
             d = self.displacements[self.mesh.DOF[i, :]]
             forces = self.total_force[self.mesh.DOF[i, :]]
             corners = self.mesh.XY[el]
-            c = self.elasticity(*corners[0, :], self.E, self.nu)
+            c = self.elasticity(self.E, self.nu)
 
             for j in range(lin_samples_per_elem):
                 for k in range(lin_samples_per_elem):

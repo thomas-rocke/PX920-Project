@@ -1,3 +1,4 @@
+from inspect import Parameter
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -44,6 +45,17 @@ class Element():
     def __init__(self, E, nu):
         self.E = E
         self.nu = nu
+        self.XY = np.zeros((4, 2))
+    
+    @property
+    def Area(self):
+        coords = self.XY
+        # Shoelace algorithm
+        mat = np.zeros((5, 2))
+        mat[:-1, :] = coords
+        mat[-1, :] = coords[0, :]
+        area = np.abs(np.sum([np.linalg.det(mat[i:i+2, :]) for i in range(4)]) / 2)
+        return area
 
 
 
