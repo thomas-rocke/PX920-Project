@@ -167,7 +167,7 @@ class MicroSolver(FEM):
     weights = gauss_weights[self.quad_points]
     sigma = np.zeros((3))
     vol = 0
-    for e in tqdm(range(len(self.mesh.ELS)), desc=r"Calculating elemental $\sigma$s"):
+    for e in tqdm(range(len(self.mesh.ELS)), desc=f"Calculating elemental σs"):
       element = self.mesh.ELS[e]
       C = self.elasticity(element.E, element.nu)
       d = disps[element.DOF]
@@ -182,14 +182,15 @@ class MicroSolver(FEM):
           vol += np.linalg.det(J)
     return sigma / vol
 
-  def homogenize(self):
+  def homogenize(self, mag=1):
     epss = [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
 
     C = np.zeros((3, 3))
 
     for i, eps in enumerate(epss):
-      self.mesh.forces = self.r_vec(eps)
-      C[:, i] = self.sigma(eps)
+      self.mesh.forces = self.r_vec(eps*mag)
+      self.solve()
+      C[:, i] = self.sigma(eps*mag)/mag
     return C
 
 
@@ -202,7 +203,7 @@ class MicroSolver(FEM):
 
 
 
-mesh = MicroMesh(5, 5, 10E9, 80E9, 0.32, 0.22, 0.45)
+mesh = MicroMesh(20, 20, 10E9, 80E9, 0.32, 0.22, 0.45)
 mesh.apply_load((0, 2), 'top')
 #mesh.apply_load((0.5, 0), 'left')
 #mesh.apply_load((-0.2, 0.1), 'right')
@@ -210,10 +211,8 @@ mesh.apply_load((0, 2), 'top')
 #mesh.plot()
 solver = MicroSolver(mesh)
 
-print(solver.homogenize())
-print(solver.Voigt())
-print(solver.Reuss())
-
-print(np.max(solver.displacements))
-solver.solve()
-solver.show_deformation(10)
+print(solver.homogenize(1))
+#print(solver.Voigt())
+#print(solver.Reuss())
+#solver.solve()
+#solver.show_deformation(10)
