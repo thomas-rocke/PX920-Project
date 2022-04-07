@@ -2,12 +2,12 @@
 Solves FEM given mesh and material properties
 
 '''
+from cmath import pi
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.interpolate import griddata
 from Meshing import Mesh
-from PlottingUtils import *
 
 
 gauss_eval_points = { # Evaluation coordinates for Gaussian Quadrature integration
@@ -139,7 +139,7 @@ class FEM():
         '''
         # Reset K to 0
         self.K = np.zeros((2 * self.nnodes, 2 * self.nnodes))
-        for i in tqdm(range(self.mesh.ELS.shape[0]), desc="Evaluating elemental Ks"):
+        for i in tqdm(range(self.mesh.ELS.shape[0]), desc="Calculating elemental Ks"):
             element = self.mesh.ELS[i]
             # Find local k matrix
             corners = element.XY
@@ -190,95 +190,5 @@ class FEM():
         plt.legend()
 
         plt.show()
-    
-    def get_props(self, lin_samples_per_elem:int=10, mpoints:int=7500):
-        '''
-        Get strain of solid, evaluating lin_samples_per_elem**2 points for each element
-        '''
-        nels = self.mesh.ELS.shape[0]
-
-        self.coords = np.zeros((nels*(lin_samples_per_elem)**2, 2)) #(x, y) coords for each evaluation point
-        self.Strains = np.zeros((nels*(lin_samples_per_elem)**2, 3)) # strains for each evaluation point
-        self.Stresses = np.zeros_like((self.Strains))
-        self.Displacements = np.zeros_like((self.coords))
-        self.Forces = np.zeros_like((self.coords), dtype=float)
-
-
-        xis = np.linspace(-1, 1, lin_samples_per_elem)
-        etas = np.linspace(-1, 1, lin_samples_per_elem)
-
-        xis, etas = np.meshgrid(xis, etas)
-
-        for i in tqdm(range(self.mesh.ELS.shape[0]), desc="Evaluating props across elements"):
-            el = self.mesh.ELS[i, :]
-            d = self.displacements[self.mesh.DOF[i, :]]
-            forces = self.total_force[self.mesh.DOF[i, :]]
-            corners = self.mesh.XY[el]
-            c = self.elasticity(self.E, self.nu)
-
-            for j in range(lin_samples_per_elem):
-                for k in range(lin_samples_per_elem):
-                    idx = i * lin_samples_per_elem**2  + j * lin_samples_per_elem + k
-
-                    b = self.strain_displacement(corners, xis[j, k], etas[j, k])
-                    shapes = N(xis[j, k], etas[j, k])
-                    self.Strains[idx] = b @ d
-                    self.coords[idx] = shapes @ corners
-                    self.Stresses[idx] =  c @ self.Strains[idx]
-                    self.Displacements[idx] = shapes @ d.reshape((4, 2))
-                    self.Forces[idx] = shapes @ forces.reshape((4, 2))
-
-        # Map to uniform grid
-        xmin = np.min(self.mesh.XY[:, 0])
-        xmax = np.max(self.mesh.XY[:, 0])
-
-        ymin = np.min(self.mesh.XY[:, 1])
-        ymax = np.max(self.mesh.XY[:, 1])
-        x = np.linspace(xmin, xmax, mpoints)
-        y = np.linspace(ymin, ymax, mpoints)
-
-        x, y = np.meshgrid(x, y)
-        print("Projecting data onto uniform grid:")
-        print("Projecting Stresses")
-        self.Stresses = griddata(self.coords, self.Stresses, (x, y), 'linear', 0)
-        print("Projecting Strains")
-        self.Strains = griddata(self.coords, self.Strains, (x, y), 'linear', 0)
-        print("Projecting Displacements")
-        self.Displacements = griddata(self.coords, self.Displacements, (x, y), 'linear', 0)
-        print("Projecting Forces")
-        self.Forces = griddata(self.coords, self.Forces, (x, y), 'linear', 0)
-        self.coords = (x, y)
-
-    def plot_props(self, shape_outline=None):
-              
-        coords = self.coords
-        strains = self.Strains
-        stresses = self.Stresses
-        disps = self.Displacements
-        forces = self.Forces
-
-
-        x = coords[0]
-        y = coords[1]
-
-        if shape_outline is None:
-            shape_outline = np.append(self.mesh.all_corners, self.mesh.all_corners[0, :][None, :], axis=0)
-
-
-        data = strains
-        labels = ["$\epsilon_{11}$", "$\epsilon_{22}$", "$\gamma_{12}$", "$|\epsilon|$"]
-        plotting_3(x, y, data, labels, shape_outline)
-
-        data = stresses
-        labels = ["$\sigma_{11}$", "$\sigma_{22}$", "$\sigma_{12}$", "$|\sigma|$"]
-        plotting_3(x, y, data, labels, shape_outline)
-
-        data = disps
-        labels = ["$x_1$ displacement", "$x_2$ displacement", "Total displacement"]
-        plotting_2(x, y, data, labels, shape_outline)
-
-        data = forces
-        labels = ["$F_{x_1}$", "$F_{x_2}$", "$|F|$"]
-        plotting_2(x, y, data, labels, shape_outline)
 
 

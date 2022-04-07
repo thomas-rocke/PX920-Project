@@ -7,7 +7,7 @@ Microscale mesh solving
 
 from cProfile import label
 from Meshing import Mesh, Element
-from FEMSolver import FEM, gauss_eval_points, gauss_weights, J
+from FEMSolver import FEM, gauss_eval_points, gauss_weights, J, Plane_Strain, Plane_Stress
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -18,7 +18,7 @@ class MicroMesh(Mesh):
                         [1, 1],
                         [1, 0],
                         [0, 0]])
-    super().__init__(corners, nx, ny, E1, nu1)
+    super().__init__(corners, nx, ny, E2, nu2)
 
     self.E1 = E1
     self.E2 = E2
@@ -66,11 +66,11 @@ class MicroMesh(Mesh):
     self.T[self.slave_DOFs, :] = -1 * np.linalg.inv(self.Gs) @ self.Gm
 
     el_IDs = np.array([i for i in range(self.ELS.shape[0])])
-    mat_2_elements = np.random.choice(el_IDs, int(percent2 * self.ELS.shape[0]), replace=False)
+    mat_1_elements = np.random.choice(el_IDs, int(percent2 * self.ELS.shape[0]), replace=False)
 
-    for el in self.ELS[mat_2_elements]:
-      el.E = E2
-      el.nu = nu2
+    for el in self.ELS[mat_1_elements]:
+      el.E = E1
+      el.nu = nu1
 
 
     
@@ -191,7 +191,28 @@ class MicroSolver(FEM):
       self.mesh.forces = self.r_vec(eps*mag)
       self.solve()
       C[:, i] = self.sigma(eps*mag)/mag
+
+      self.C = C
     return C
+
+  def infer_props(self):
+    C_11 = 0.5*(self.C[0, 0] + self.C[1, 1])
+    C_12 = 0.5*(self.C[0, 1] + self.C[1, 0])
+    if self.elasticity == Plane_Stress:
+      nu = C_12/C_11
+      E = C_11 * (1 - nu * nu)
+
+    elif self.elasticity == Plane_Strain:
+      nu = C_12 / (C_11 - C_12)
+      E  = C_12 * (1-nu)*(1+nu)/nu
+
+    else:
+      print("Process to invert C unknown")
+      nu = 0
+      E = 0
+    
+    return E, nu
+
 
 
 
@@ -202,18 +223,25 @@ class MicroSolver(FEM):
 
 
 
-mesh = MicroMesh(20, 20, 10E9, 80E9, 0.32, 0.22, 0.45)
-mesh.apply_load((0, 2), 'top')
-#mesh.apply_load((0.5, 0), 'left')
-#mesh.apply_load((-0.2, 0.1), 'right')
+# #mesh = MicroMesh(20, 20, 10E9, 80E9, 0.32, 0.22, 0.55)
 
-#mesh.plot()
-solver = MicroSolver(mesh)
+# mesh = MicroMesh(20, 20, 9E9, 63E9, 0.33, 0.23, 0.6)
+# #mesh.apply_load((0, 2), 'top')
+# #mesh.apply_load((0.5, 0), 'left')
+# #mesh.apply_load((-0.2, 0.1), 'right')
 
-c = solver.homogenize(1)
+# #mesh.plot()
+# solver = MicroSolver(mesh)
 
-print(c)
+# c = solver.homogenize(1)
+# is_pinned = mesh.pins.flatten()
+# E, nu = solver.infer_props()
+# print(solver.C)
+# print(np.format_float_scientific(E))
+# print(nu)
 #print(solver.Voigt())
 #print(solver.Reuss())
+
+#print(solver.K)
 #solver.solve()
 #solver.show_deformation(10)

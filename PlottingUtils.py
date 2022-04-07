@@ -1,134 +1,61 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from MicroMesh import MicroMesh, MicroSolver
 
 
+def Converge(mat_1_params=[10E9, 0.32], mat_2_params=[80E9, 0.22], rel_conc=0.55, nxs=np.array([3, 4, 5, 7, 10, 15, 20, 28, 44, 50])):
+    E_1, nu_1 = mat_1_params
+    E_2, nu_2 = mat_2_params
 
-def mask_outside_polygon(poly_verts, ax=None):
-    """
-    Plots a mask on the specified axis ("ax", defaults to plt.gca()) such that
-    all areas outside of the polygon specified by "poly_verts" are masked.  
+    Cs = np.zeros((nxs.shape[0], 3, 3))
+    real_concs = np.zeros((nxs.shape[0]))
+    nnodes = np.zeros_like(real_concs)
 
-    "poly_verts" must be a list of tuples of the verticies in the polygon in
-    counter-clockwise order.
+    for i, nx in enumerate(nxs):
+        mesh = MicroMesh(nx, nx, E_1, E_2, nu_1, nu_2, rel_conc)
+        solver = MicroSolver(mesh)
+        Cs[i, :, :] = solver.homogenize()
+        real_concs[i] = np.sum([el.E == E_1 for el in mesh.ELS])/mesh.ELS.shape[0]
+        nnodes[i] = mesh.nnodes
 
-    Returns the matplotlib.patches.PathPatch instance plotted on the figure.
-    """
-    import matplotlib.patches as mpatches
-    import matplotlib.path as mpath
-
-    if ax is None:
-        ax = plt.gca()
-
-    # Get current plot limits
-    xlim = np.array(ax.get_xlim())*1.1
-    ylim = np.array(ax.get_ylim())*1.1
-
-    # Verticies of the plot boundaries in clockwise order
-    outside_vertices = np.array([[xlim[0], ylim[0]],
-                                    [xlim[0], ylim[1]],
-                                    [xlim[1], ylim[1]],
-                                    [xlim[1], ylim[0]],
-                                    [xlim[0], ylim[0]]])[:, :, None]
-
-    outside_vertices = np.hstack((outside_vertices[:, 0, :], outside_vertices[:, 1, :]))
+    return Cs, real_concs, nnodes
 
 
-    inside_vertices = np.hstack((poly_verts[:, 0][:, None], poly_verts[:, 1][:, None]))
+def plot_c_converge(nnodes, Cs, mat_1_params=[10E9, 0.32], mat_2_params=[80E9, 0.22], rel_conc=0.55):
+    E_1, nu_1 = mat_1_params
+    E_2, nu_2 = mat_2_params
+    mesh = MicroMesh(3, 3, E_1, E_2, nu_1, nu_2, rel_conc)
+    solver = MicroSolver(mesh)
 
-    ins_codes = np.ones(
-        len(inside_vertices), dtype=mpath.Path.code_type) * mpath.Path.LINETO
-    ins_codes[0] = mpath.Path.MOVETO
+    voigt_C = solver.Voigt()/1E9
+    reuss_C = solver.Reuss()/1E9
+    C_1 = solver.elasticity(E_1, nu_1)/1E9
+    C_2 = solver.elasticity(E_2, nu_2)/1E9
 
-    ots_codes = np.ones(
-        len(outside_vertices), dtype=mpath.Path.code_type) * mpath.Path.LINETO
-    ots_codes[0] = mpath.Path.MOVETO
+    Cs = Cs.copy()/1E9
 
-    # Concatenate the inside and outside subpaths together, changing their
-    # order as needed
-    vertices = np.concatenate((outside_vertices[::1],
-                            inside_vertices[::-1]))
-    # Shift the path
-    #vertices[:, 0] += i * 2.5
-    # The codes will be all "LINETO" commands, except for "MOVETO"s at the
-    # beginning of each subpath
-    all_codes = np.concatenate((ots_codes, ins_codes))
-    # Create the Path object
-    path = mpath.Path(vertices, all_codes)
-    # Add plot it
-    patch = mpatches.PathPatch(path, facecolor='blue', edgecolor='black')
-    ax.add_patch(patch)
+    fig, ax = plt.subplots(3, 3)
 
-    return patch
+    for i in range(3):
+        for j in range(3):
+            ax[i, j].plot(nnodes, Cs[:, i, j], label="Homogenized", color='k')
+            ax[i, j].hlines(voigt_C[i, j], 0, np.max(nnodes), label='Voigt bound', color='C1', linestyle='dashed')
+            ax[i, j].hlines(reuss_C[i, j], 0, np.max(nnodes), label='Reuss bound', color='C2', linestyle='dashed')
+            #ax[i, j].hlines(C_1[i, j], 0, np.max(nnodes), label='Material 1', color='C3', linestyle='dashed')
+            #ax[i, j].hlines(C_2[i, j], 0, np.max(nnodes), label='Material 2', color='C4', linestyle='dashed')
+            ax[i, j].set_title(f"Convergence of $C_{{ {i + 1}, {j + 1} }}$")
+            ax[i, j].set_xlabel("Total Number of Nodes")
+            ax[i, j].set_ylabel("Estimated Elastic Property/GPa")
+            ax[i, j].set_xscale('log')
+            ax[i, j].legend()
 
-def plotting_3(x, y, data, labels, corners):
-    fig, ax = plt.subplots(nrows=2, ncols = 2)
-
-    #poly2 = mask_outside_polygon(corners, ax[1, 0])
-    #poly3 = mask_outside_polygon(corners, ax[0, 1])
-    #poly4 = mask_outside_polygon(corners, ax[1, 1])
-    vmax = np.max(np.abs(data))
-    vmin = -vmax
-
-    xmin = np.min(x)
-    xmax = np.max(x)
-
-    ymin = np.min(y)
-    ymax = np.max(y)
-
-    col = ax[0, 0].imshow(data[:, :, 0], extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, cmap='bwr', origin='lower')
-    ax[0, 0].set_title(labels[0])
-    mask_outside_polygon(corners, ax[0, 0])
-
-
-    ax[1, 0].imshow(data[:, :, 1], extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, cmap='bwr', origin='lower')
-    ax[1, 0].set_title(labels[1])
-    mask_outside_polygon(corners, ax[1, 0])
-
-    ax[0, 1].imshow(data[:, :, 2], extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, cmap='bwr', origin='lower')
-    ax[0, 1].set_title(labels[2])
-    mask_outside_polygon(corners, ax[0, 1])
-
-    ax[1, 1].imshow(np.linalg.norm(data, axis=-1), extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, cmap='bwr', origin='lower')
-    ax[1, 1].set_title(labels[3])
-    mask_outside_polygon(corners, ax[1, 1])
-    
-    
-    fig.subplots_adjust(right=0.4)
-    cbar_ax = fig.add_axes([0.45, 0.15, 0.05, 0.7])
-    fig.colorbar(col, cax=cbar_ax)
     plt.show()
 
-def plotting_2(x, y, data, labels, corners):
-    fig, ax = plt.subplots(nrows=2, ncols = 2)
-
-    #poly2 = mask_outside_polygon(corners, ax[1, 0])
-    #poly3 = mask_outside_polygon(corners, ax[0, 1])
-    #poly4 = mask_outside_polygon(corners, ax[1, 1])
-    vmax = np.max(np.abs(data))
-    vmin = -vmax
-
-    xmin = np.min(x)
-    xmax = np.max(x)
-
-    ymin = np.min(y)
-    ymax = np.max(y)
-
-    col = ax[0, 0].imshow(data[:, :, 0], extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, cmap='bwr', origin='lower')
-    ax[0, 0].set_title(labels[0])
-    mask_outside_polygon(corners, ax[0, 0])
 
 
-    ax[1, 0].imshow(data[:, :, 1], extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, cmap='bwr', origin='lower')
-    ax[1, 0].set_title(labels[1])
-    mask_outside_polygon(corners, ax[1, 0])
 
-    ax[0, 1].imshow(np.linalg.norm(data, axis=-1), extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, cmap='bwr', origin='lower')
-    ax[0, 1].set_title(labels[2])
-    mask_outside_polygon(corners, ax[0, 1])
+Cs, real_concs, nnodes = Converge()
+plot_c_converge(nnodes, Cs)
+
+
     
-    ax[1, 1].axis('off')
-    
-    fig.subplots_adjust(right=0.4)
-    cbar_ax = fig.add_axes([0.45, 0.15, 0.05, 0.7])
-    fig.colorbar(col, cax=cbar_ax)
-    plt.show()
