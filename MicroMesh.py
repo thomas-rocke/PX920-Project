@@ -65,10 +65,10 @@ class MicroMesh(Mesh):
     self.T[self.free_DOFs, :] = np.identity(2*self.num_masters)
     self.T[self.slave_DOFs, :] = -1 * np.linalg.inv(self.Gs) @ self.Gm
 
+    el_IDs = np.array([i for i in range(self.ELS.shape[0])])
+    mat_2_elements = np.random.choice(el_IDs, int(percent2 * self.ELS.shape[0]), replace=False)
 
-    mat_2_elements = np.random.choice(self.ELS, int(percent2 * self.nnodes), replace=False)
-
-    for el in mat_2_elements:
+    for el in self.ELS[mat_2_elements]:
       el.E = E2
       el.nu = nu2
 
@@ -202,7 +202,6 @@ class MicroSolver(FEM):
 
 
 
-
 mesh = MicroMesh(20, 20, 10E9, 80E9, 0.32, 0.22, 0.45)
 mesh.apply_load((0, 2), 'top')
 #mesh.apply_load((0.5, 0), 'left')
@@ -211,7 +210,9 @@ mesh.apply_load((0, 2), 'top')
 #mesh.plot()
 solver = MicroSolver(mesh)
 
-print(solver.homogenize(1))
+c = solver.homogenize(1)
+
+print(c)
 #print(solver.Voigt())
 #print(solver.Reuss())
 #solver.solve()
