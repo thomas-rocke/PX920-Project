@@ -35,7 +35,7 @@ def Plane_Stress(E, nu):
 
 def Plane_Strain(E, nu):
     '''C matrix in the case of plane strain'''
-    const = E/(1.0-nu)/(1 + nu)
+    const = E/((1.0-2*nu)/(1 + nu))
     C = np.array([[1.0 - nu, nu, 0.0], [nu, 1.0-nu, 0.0], [0.0, 0.0, 0.5*(1.0-2 * nu)]])
     return const*C
 
@@ -129,8 +129,14 @@ class FEM():
                 # Strain-displacement matrix
                 B = self.strain_displacement(corners, xi, eta)
 
+                dN = self.dN(xi, eta)
+
+                # Real-space Jacobian
+                #Jmat = dN @ corners
+                #Jmat=J(xi, eta)
+
                 # Construct elemental k
-                k_element += (B.T @ C @ B) * weights[i] * weights[j]
+                k_element += (B.T @ C @ B) * weights[i] * weights[j] #* np.linalg.det(Jmat)
         return k_element     
 
     def eval_K(self):
@@ -139,7 +145,7 @@ class FEM():
         '''
         # Reset K to 0
         self.K = np.zeros((2 * self.nnodes, 2 * self.nnodes))
-        for i in tqdm(range(self.mesh.ELS.shape[0]), desc="Calculating elemental Ks"):
+        for i in tqdm(range(self.mesh.ELS.shape[0]), desc="Calculating elemental Ks", leave=False):
             element = self.mesh.ELS[i]
             # Find local k matrix
             corners = element.XY

@@ -84,8 +84,6 @@ class MicroSolver(FEM):
     C_1 = self.elasticity(self.mesh.E1, self.mesh.nu1)
     C_2 = self.elasticity(self.mesh.E2, self.mesh.nu2)
 
-    print(self.mesh.nu1)
-
     return self.mesh.frac1 * C_1 + self.mesh.frac2 * C_2
 
   def Reuss(self):
@@ -145,7 +143,7 @@ class MicroSolver(FEM):
 
     points = gauss_eval_points[self.quad_points]
     weights = gauss_weights[self.quad_points]
-    for e in tqdm(range(len(self.mesh.ELS)), desc="Calculating elemental Rs"):
+    for e in tqdm(range(len(self.mesh.ELS)), desc="Calculating elemental Rs", leave=False):
       element = self.mesh.ELS[e]
       r_vec_e = np.zeros((8))
       C = self.elasticity(element.E, element.nu)
@@ -167,7 +165,7 @@ class MicroSolver(FEM):
     weights = gauss_weights[self.quad_points]
     sigma = np.zeros((3))
     vol = 0
-    for e in tqdm(range(len(self.mesh.ELS)), desc=f"Calculating elemental σs"):
+    for e in tqdm(range(len(self.mesh.ELS)), desc=f"Calculating elemental σs", leave=False):
       element = self.mesh.ELS[e]
       C = self.elasticity(element.E, element.nu)
       d = disps[element.DOF]
@@ -187,7 +185,8 @@ class MicroSolver(FEM):
 
     C = np.zeros((3, 3))
 
-    for i, eps in enumerate(epss):
+    for i in tqdm(range(3), desc="Testing under Unit Strains", leave=False):
+      eps = epss[i]
       self.mesh.forces = self.r_vec(eps*mag)
       self.solve()
       C[:, i] = self.sigma(eps*mag)/mag
@@ -195,16 +194,19 @@ class MicroSolver(FEM):
       self.C = C
     return C
 
-  def infer_props(self):
-    C_11 = 0.5*(self.C[0, 0] + self.C[1, 1])
-    C_12 = 0.5*(self.C[0, 1] + self.C[1, 0])
+  def infer_props(self, C=None):
+    if C is None:
+      C = self.C
+    C_11 = 0.5*(C[0, 0] + C[1, 1])
+    C_12 = 0.5*(C[0, 1] + C[1, 0])
+
     if self.elasticity == Plane_Stress:
       nu = C_12/C_11
       E = C_11 * (1 - nu * nu)
 
     elif self.elasticity == Plane_Strain:
-      nu = C_12 / (C_11 - C_12)
-      E  = C_12 * (1-nu)*(1+nu)/nu
+      nu = C_12 / (C_11 + C_12)
+      E  = C_12 * ((1-2*nu)*(1+nu))/nu
 
     else:
       print("Process to invert C unknown")
@@ -223,25 +225,38 @@ class MicroSolver(FEM):
 
 
 
-# #mesh = MicroMesh(20, 20, 10E9, 80E9, 0.32, 0.22, 0.55)
+# # #mesh = MicroMesh(20, 20, 10E9, 80E9, 0.32, 0.22, 0.55)
 
 # mesh = MicroMesh(20, 20, 9E9, 63E9, 0.33, 0.23, 0.6)
-# #mesh.apply_load((0, 2), 'top')
-# #mesh.apply_load((0.5, 0), 'left')
-# #mesh.apply_load((-0.2, 0.1), 'right')
+# # #mesh.apply_load((0, 2), 'top')
+# # #mesh.apply_load((0.5, 0), 'left')
+# # #mesh.apply_load((-0.2, 0.1), 'right')
 
-# #mesh.plot()
+# # #mesh.plot()
 # solver = MicroSolver(mesh)
 
 # c = solver.homogenize(1)
-# is_pinned = mesh.pins.flatten()
-# E, nu = solver.infer_props()
-# print(solver.C)
-# print(np.format_float_scientific(E))
-# print(nu)
-#print(solver.Voigt())
-#print(solver.Reuss())
+# # is_pinned = mesh.pins.flatten()
+# # E, nu = solver.infer_props()
+# # print(solver.C)
+# # print(np.format_float_scientific(E))
+# # print(nu)
+# #print(solver.Voigt())
+# C_reuss = solver.Reuss()
 
-#print(solver.K)
-#solver.solve()
+# E_reuss, nu_reuss = solver.infer_props(C_reuss)
+
+# print(C_reuss - solver.elasticity(E_reuss, nu_reuss))
+# print(C_reuss)
+
+# C_voigt = solver.Voigt()
+
+# E_voigt, nu_voigt = solver.infer_props(C_voigt)
+
+# print(C_voigt - solver.elasticity(E_voigt, nu_voigt))
+# print(C_voigt)
+
+
+# #print(solver.K)
+# #solver.solve()
 #solver.show_deformation(10)
