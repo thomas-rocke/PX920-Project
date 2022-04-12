@@ -57,6 +57,13 @@ class Element():
         area = np.abs(np.sum([np.linalg.det(mat[i:i+2, :]) for i in range(4)]) / 2)
         return area
 
+    @property
+    def COM(self):
+        '''
+        Gets center of mass of element
+        '''
+        return np.average(self.XY, axis=0)
+
 
 
 class Mesh():

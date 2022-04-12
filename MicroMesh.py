@@ -5,15 +5,49 @@ Microscale mesh solving
 '''
 
 
+from ast import Lambda
 from cProfile import label
+from turtle import fillcolor
 from Meshing import Mesh, Element
 from FEMSolver import FEM, gauss_eval_points, gauss_weights, J, Plane_Strain, Plane_Stress
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+
+def random_microstructure(els, vol_frac, E1, nu1, **kwargs):
+  el_IDs = np.array([i for i in range(els.shape[0])])
+  mat_1_elements = np.random.choice(el_IDs, int(vol_frac * els.shape[0]), replace=False)
+
+  for el in els[mat_1_elements]:
+    el.E = E1
+    el.nu = nu1
+  return els
+
+
+def circles_microstructure(els, vol_frac, E1, nu1, num_circ=1, **kwargs):
+  area_per_circ = vol_frac / num_circ
+  circ_rad = np.sqrt(area_per_circ / np.pi) # Radius of each circle in microstructure
+  circ_per_side = int(np.sqrt(num_circ))
+
+  coords = np.linspace(0, 1, 2*circ_per_side + 1)[1::2]
+  center = np.zeros((2))
+  COMs = np.array([el.COM for el in els])
+  for i in range(circ_per_side):
+    for j in range(circ_per_side):
+      center = np.array([coords[i], coords[j]])
+      mat_1_elements = np.where(np.sum((COMs - center)**2, axis=1) < circ_rad**2)
+      for el in els[mat_1_elements]:
+        el.E = E1
+        el.nu = nu1
+  return els
+
+
+
+
+
 class MicroMesh(Mesh):
-  def __init__(self, nx:int, ny:int, E1:float, E2:float, nu1:float, nu2:float, percent2:float):
+  def __init__(self, nx:int, ny:int, E1:float, E2:float, nu1:float, nu2:float, percent2:float, micro_fun=random_microstructure, **kwargs):
     corners = np.array([[0, 1],
                         [1, 1],
                         [1, 0],
@@ -65,12 +99,38 @@ class MicroMesh(Mesh):
     self.T[self.free_DOFs, :] = np.identity(2*self.num_masters)
     self.T[self.slave_DOFs, :] = -1 * np.linalg.inv(self.Gs) @ self.Gm
 
-    el_IDs = np.array([i for i in range(self.ELS.shape[0])])
-    mat_1_elements = np.random.choice(el_IDs, int(percent2 * self.ELS.shape[0]), replace=False)
+    self.ELS = micro_fun(self.ELS, self.frac2, E1, nu1, **kwargs)
 
-    for el in self.ELS[mat_1_elements]:
-      el.E = E1
-      el.nu = nu1
+  def plot(self):
+    '''
+    Plots the constructed mesh
+    '''
+    title = "Mesh"
+
+    for el in self.ELS:
+      if (el.E == self.E1):
+        color = 'C1'
+      else:
+        color = 'C2'
+      plt.fill(el.XY[:, 0], el.XY[:, 1], edgecolor='k', color=color, alpha=0.3)
+
+
+    # if show_ids:
+    #     for i in range(4):                             #loop over all nodes within an element
+    #         for el in self.ELS:                  #loop over all elements
+    #             sh=0.01
+    #             plt.text(el.XY[i, 0]+sh,el.XY[i, 1]+sh, el.nodes[i])
+
+    # Set chart title.
+    plt.title(title, fontsize=19)
+    # Set x axis label.
+    plt.xlabel("$x_1$", fontsize=10)
+    # Set y axis label.
+    plt.ylabel("$x_2$", fontsize=10)
+
+    #plt.legend()
+
+    plt.show()
 
 
     
@@ -225,38 +285,16 @@ class MicroSolver(FEM):
 
 
 
-# # #mesh = MicroMesh(20, 20, 10E9, 80E9, 0.32, 0.22, 0.55)
+# num_circ = 4
 
-# mesh = MicroMesh(20, 20, 9E9, 63E9, 0.33, 0.23, 0.6)
-# # #mesh.apply_load((0, 2), 'top')
-# # #mesh.apply_load((0.5, 0), 'left')
-# # #mesh.apply_load((-0.2, 0.1), 'right')
+# mat_1_params=[10E9, 0.32]
+# mat_2_params=[80E9, 0.22]
+# rel_conc=0.55
 
-# # #mesh.plot()
-# solver = MicroSolver(mesh)
-
-# c = solver.homogenize(1)
-# # is_pinned = mesh.pins.flatten()
-# # E, nu = solver.infer_props()
-# # print(solver.C)
-# # print(np.format_float_scientific(E))
-# # print(nu)
-# #print(solver.Voigt())
-# C_reuss = solver.Reuss()
-
-# E_reuss, nu_reuss = solver.infer_props(C_reuss)
-
-# print(C_reuss - solver.elasticity(E_reuss, nu_reuss))
-# print(C_reuss)
-
-# C_voigt = solver.Voigt()
-
-# E_voigt, nu_voigt = solver.infer_props(C_voigt)
-
-# print(C_voigt - solver.elasticity(E_voigt, nu_voigt))
-# print(C_voigt)
+# E_1, nu_1 = mat_1_params
+# E_2, nu_2 = mat_2_params
 
 
-# #print(solver.K)
-# #solver.solve()
-#solver.show_deformation(10)
+# mesh = MicroMesh(50, 50, E_1, E_2, nu_1, nu_2, rel_conc, micro_fun=circles_microstructure, num_circ=num_circ)
+# print(np.sum([el.E == mesh.E1 for el in mesh.ELS])/len(mesh.ELS))
+# mesh.plot()
