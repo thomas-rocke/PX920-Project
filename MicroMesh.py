@@ -25,7 +25,7 @@ def random_microstructure(els, vol_frac, E1, nu1, **kwargs):
   return els
 
 
-def circles_microstructure(els, vol_frac, E1, nu1, num_circ=1, **kwargs):
+def circles_microstructure(els, vol_frac, E1, nu1, num_circ=1, offset=1/12, **kwargs):
   area_per_circ = vol_frac / num_circ
   circ_rad = np.sqrt(area_per_circ / np.pi) # Radius of each circle in microstructure
   circ_per_side = int(np.sqrt(num_circ))
@@ -36,6 +36,7 @@ def circles_microstructure(els, vol_frac, E1, nu1, num_circ=1, **kwargs):
   for i in range(circ_per_side):
     for j in range(circ_per_side):
       center = np.array([coords[i], coords[j]])
+      center += np.random.rand(2) * (circ_rad * 2 * offset) - (circ_rad * offset)
       mat_1_elements = np.where(np.sum((COMs - center)**2, axis=1) < circ_rad**2)
       for el in els[mat_1_elements]:
         el.E = E1
@@ -295,6 +296,7 @@ class MicroSolver(FEM):
 # E_2, nu_2 = mat_2_params
 
 
-# mesh = MicroMesh(50, 50, E_1, E_2, nu_1, nu_2, rel_conc, micro_fun=circles_microstructure, num_circ=num_circ)
-# print(np.sum([el.E == mesh.E1 for el in mesh.ELS])/len(mesh.ELS))
+# mesh = MicroMesh(96, 96, E_1, E_2, nu_1, nu_2, rel_conc, micro_fun=circles_microstructure)
 # mesh.plot()
+# solver = MicroSolver(mesh)
+# print(solver.homogenize())

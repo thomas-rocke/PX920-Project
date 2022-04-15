@@ -9,7 +9,7 @@ def int_logscale(max_n):
     init_scale = np.logspace(np.log10(3), np.log10(max_n), num=30)
     return np.unique(init_scale.astype(int))
 
-def Converge(mat_1_params=[10E9, 0.32], mat_2_params=[80E9, 0.22], rel_conc=0.55, nxs=np.arange(3, 11), num_candidates=15):
+def Converge(mat_1_params=[10E9, 0.32], mat_2_params=[80E9, 0.22], rel_conc=0.55, nxs=np.array([4, 8, 16, 32, 64, 96]), num_candidates=10):
     E_1, nu_1 = mat_1_params
     E_2, nu_2 = mat_2_params
 
@@ -30,7 +30,7 @@ def Converge(mat_1_params=[10E9, 0.32], mat_2_params=[80E9, 0.22], rel_conc=0.55
     for i in tqdm(range(len(nxs)), desc="Running through nx values"):
         nx = nxs[i]
         for j in tqdm(range(num_candidates), desc="Testing ensemble of Meshes", leave=False):
-            mesh = MicroMesh(nx, nx, E_1, E_2, nu_1, nu_2, rel_conc)
+            mesh = MicroMesh(nx, nx, E_1, E_2, nu_1, nu_2, rel_conc, micro_fun=circles_microstructure)
             solver = MicroSolver(mesh)
             temp_Cs[j, :, :] = solver.homogenize()
             E_tmp[j], nu_tmp[j] = solver.infer_props()
@@ -136,29 +136,29 @@ def plot_c_converge(Cs, C_errs, Es, E_errs, nus, nu_errs, real_concs, nnodes, ma
     plt.tight_layout()      
     plt.savefig("E_convergence.png")
 
-def sens_analysis(n=35, steps=np.array([10E7, 80E7, 0.0032, 0.0022, 0.006]), x_opt=np.array([10E9, 80E9, 0.32, 0.22, 0.55])):
+def sens_analysis(n=35, steps=np.array([10E7, 80E7, 0.0032, 0.0022, 0.006]), x_opt=np.array([10E9, 80E9, 0.32, 0.22, 0.55]), candidates = 5):
     def central_difference(Q_1, Q_2, step):
         return (Q_2 - Q_1)/(2*step)
 
     Q_grads = np.zeros((steps.shape[0], 3, 3))
+    for c in range(candidates):
+        for i in tqdm(range(steps.shape[0]), desc="Generating Sens for parameters"):
+            x = x_opt
+            x[i] -= steps[i]
 
-    for i in tqdm(range(steps.shape[0]), desc="Generating Sens for parameters"):
-        x = x_opt
-        x[i] -= steps[i]
+            mesh = MicroMesh(n, n, *x)
+            solver = MicroSolver(mesh)
+            Q_1 = solver.homogenize()
 
-        mesh = MicroMesh(n, n, *x)
-        solver = MicroSolver(mesh)
-        Q_1 = solver.homogenize()
+            x = x_opt
+            x[i] += steps[i]
 
-        x = x_opt
-        x[i] += steps[i]
+            mesh = MicroMesh(n, n, *x)
+            solver = MicroSolver(mesh)
+            Q_2 = solver.homogenize()
 
-        mesh = MicroMesh(n, n, *x)
-        solver = MicroSolver(mesh)
-        Q_2 = solver.homogenize()
-
-        Q_grads[i, :, :] = central_difference(Q_1, Q_2, steps[i]) * x_opt[i] # Scaled Sensitivities
-    return Q_grads
+            Q_grads[i, :, :] += central_difference(Q_1, Q_2, steps[i]) * x_opt[i] # Scaled Sensitivities
+    return Q_grads/candidates
 
 
 def plot_sens(Q_grads):
@@ -239,11 +239,11 @@ def plot_RVE(Cs, C_errs, num_circs, voigt_C, reuss_C):
     plt.savefig("RVE_converge.png")
 
 
-# props = Converge()
-# plot_c_converge(*props)
+props = Converge()
+plot_c_converge(*props)
 
 # Q_grad = sens_analysis()
 # plot_sens(Q_grad)
 
-props = RVE_analysis()
-plot_RVE(*props)
+# props = RVE_analysis()
+# plot_RVE(*props)
