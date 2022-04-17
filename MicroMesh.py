@@ -13,7 +13,6 @@ from FEMSolver import FEM, gauss_eval_points, gauss_weights, J, Plane_Strain, Pl
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from Profiler import profile
 
 
 def random_microstructure(els, vol_frac, E1, nu1, **kwargs):
