@@ -132,7 +132,7 @@ class FEM():
                 dN = self.dN(xi, eta)
 
                 # Real-space Jacobian
-                #Jmat = dN @ corners
+                Jmat = dN @ corners
                 #Jmat=J(xi, eta)
 
                 # Construct elemental k

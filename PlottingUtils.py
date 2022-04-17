@@ -3,13 +3,14 @@ import matplotlib.pyplot as plt
 from MicroMesh import MicroMesh, MicroSolver, circles_microstructure
 from tqdm import tqdm
 from scipy.stats import multivariate_normal
+from VoigtReussSens import get_VR_sens
 
 
 def int_logscale(max_n):
     init_scale = np.logspace(np.log10(3), np.log10(max_n), num=30)
     return np.unique(init_scale.astype(int))
 
-def Converge(mat_1_params=[10E9, 0.32], mat_2_params=[80E9, 0.22], rel_conc=0.55, nxs=np.array([4, 8, 16, 32, 64, 96]), num_candidates=10):
+def Converge(mat_1_params=[10E9, 0.32], mat_2_params=[80E9, 0.22], rel_conc=0.55, nxs=np.array([3, 5, 6, 7,8,9,10,11, 13, 16, 21]), num_candidates=4):
     E_1, nu_1 = mat_1_params
     E_2, nu_2 = mat_2_params
 
@@ -30,7 +31,7 @@ def Converge(mat_1_params=[10E9, 0.32], mat_2_params=[80E9, 0.22], rel_conc=0.55
     for i in tqdm(range(len(nxs)), desc="Running through nx values"):
         nx = nxs[i]
         for j in tqdm(range(num_candidates), desc="Testing ensemble of Meshes", leave=False):
-            mesh = MicroMesh(nx, nx, E_1, E_2, nu_1, nu_2, rel_conc, micro_fun=circles_microstructure)
+            mesh = MicroMesh(nx, nx, E_1, E_2, nu_1, nu_2, rel_conc)#, micro_fun=circles_microstructure)
             solver = MicroSolver(mesh)
             temp_Cs[j, :, :] = solver.homogenize()
             E_tmp[j], nu_tmp[j] = solver.infer_props()
@@ -90,7 +91,7 @@ def plot_c_converge(Cs, C_errs, Es, E_errs, nus, nu_errs, real_concs, nnodes, ma
             ax[i, j].set_ylabel("Estimated Elastic Property/GPa")
             ax[i, j].set_xscale('log')
 
-            # if (i<2 and j<2) or (i==3 and j==3):
+            # if (i<2 and j<2) or (i==2 and j==2):
             #     ax[i, j].set_yscale("log")
             ax[i, j].legend()
     plt.tight_layout()      
@@ -136,13 +137,12 @@ def plot_c_converge(Cs, C_errs, Es, E_errs, nus, nu_errs, real_concs, nnodes, ma
     plt.tight_layout()      
     plt.savefig("E_convergence.png")
 
-def sens_analysis(n=35, steps=np.array([10E7, 80E7, 0.0032, 0.0022, 0.006]), x_opt=np.array([10E9, 80E9, 0.32, 0.22, 0.55]), candidates = 5):
+def sens_analysis(n=33, steps=np.array([10E7, 80E7, 0.0032, 0.0022, 0.0055]), x_opt=np.array([10E9, 80E9, 0.32, 0.22, 0.55]), candidates = 10):
     def central_difference(Q_1, Q_2, step):
         return (Q_2 - Q_1)/(2*step)
-
     Q_grads = np.zeros((steps.shape[0], 3, 3))
-    for c in range(candidates):
-        for i in tqdm(range(steps.shape[0]), desc="Generating Sens for parameters"):
+    for c in tqdm(range(candidates), desc="Running an Ensemble"):
+        for i in tqdm(range(steps.shape[0]), desc="Generating Sens for parameters", leave=False):
             x = x_opt
             x[i] -= steps[i]
 
@@ -157,7 +157,7 @@ def sens_analysis(n=35, steps=np.array([10E7, 80E7, 0.0032, 0.0022, 0.006]), x_o
             solver = MicroSolver(mesh)
             Q_2 = solver.homogenize()
 
-            Q_grads[i, :, :] += central_difference(Q_1, Q_2, steps[i]) * x_opt[i] # Scaled Sensitivities
+            Q_grads[i, :, :] += np.abs(central_difference(Q_1, Q_2, steps[i]) * x_opt[i]) # Absolute Scaled Sensitivities
     return Q_grads/candidates
 
 
@@ -165,18 +165,25 @@ def plot_sens(Q_grads):
     
     fig, ax = plt.subplots(3, 3, figsize=(10.0, 10.0))
 
-    Q_grads = np.abs(Q_grads.copy())/1E9
-
+    Q_grads = np.abs(Q_grads.copy()/1E9)
+    v_sens, r_sens = get_VR_sens()
+    v_sens = np.abs(v_sens/1E9)
+    r_sens = np.abs(r_sens/1E9)
+    width = 0.3
     labels=[r"E$_1$", r"E$_2$", r"$\nu_1$", r"$\nu_2$", r"$\phi_A$"]
 
     for i in range(3):
         for j in range(3):
-            ax[i, j].bar(range(Q_grads.shape[0]), Q_grads[:, i, j])
-            ax[i, j].set_xticks(range(Q_grads.shape[0]))
+            ax[i, j].bar((3.5*np.array(range(Q_grads.shape[0])))*width, v_sens[:, i, j], label="Voigt Sensitivities", width=width)
+            ax[i, j].bar((3.5*np.array(range(Q_grads.shape[0]))+1)*width, Q_grads[:, i, j], label="True Sensitivities", width=width)
+            ax[i, j].bar((3.5*np.array(range(Q_grads.shape[0]))+2)*width, r_sens[:, i, j], label="Reuss Sensitivities", width=width)
+
+            ax[i, j].set_xticks((3.5*np.array(range(Q_grads.shape[0])) + 1)*width)
             ax[i, j].set_xticklabels(labels)
             ax[i, j].set_xlabel("Parameter")
             ax[i, j].set_ylabel("Scaled Sensitivity/GPa")
             ax[i, j].set_title(f"Sensitivity of $C_{{{i + 1},{j + 1}}}$")
+            ax[i, j].legend()
     plt.tight_layout()
 
     plt.savefig("Sensitivities.png")
@@ -239,8 +246,17 @@ def plot_RVE(Cs, C_errs, num_circs, voigt_C, reuss_C):
     plt.savefig("RVE_converge.png")
 
 
+para_1 = [8E9, 0.34]
+para_2 = [48E9, 0.24]
+vol_frac = 0.65
+
+# props = Converge(para_1, para_2, vol_frac)
+# plot_c_converge(*props, para_1, para_2, vol_frac)
+
+
 props = Converge()
 plot_c_converge(*props)
+
 
 # Q_grad = sens_analysis()
 # plot_sens(Q_grad)

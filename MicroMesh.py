@@ -13,6 +13,7 @@ from FEMSolver import FEM, gauss_eval_points, gauss_weights, J, Plane_Strain, Pl
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from Profiler import profile
 
 
 def random_microstructure(els, vol_frac, E1, nu1, **kwargs):
@@ -176,28 +177,39 @@ class MicroSolver(FEM):
 
     old_XY = self.mesh.XY
     new_XY = self.mesh.XY + disps.reshape((self.nnodes, 2))
-    plt.plot(old_XY[:, 0], old_XY[:, 1], 'sk', label='Undeformed shape')
-    plt.plot(new_XY[:, 0], new_XY[:, 1], 'sr', label='Deformed Shape')
+    #plt.plot(old_XY[:, 0], old_XY[:, 1], 'sk', label='Undeformed shape')
+    #plt.plot(new_XY[:, 0], new_XY[:, 1], 'sr', label='Deformed Shape')
 
     for el in self.mesh.ELS:
-        plt.fill(old_XY[el.nodes, 0], old_XY[el.nodes, 1], edgecolor='k', fill=False)
-        plt.fill(new_XY[el.nodes, 0], new_XY[el.nodes, 1], edgecolor='r', fill=False)
+      if (el.E == self.mesh.E1):
+        color = 'C1'
+      else:
+        color = 'C2'
+      plt.fill(old_XY[el.nodes, 0], old_XY[el.nodes, 1], edgecolor='k', color=color, alpha=0.5)
+      plt.fill(new_XY[el.nodes, 0], new_XY[el.nodes, 1], edgecolor='r', color=color, alpha=0.5)
     
     for neigh in [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [1, -1], [-1, 1]]:
       old = old_XY + neigh
       new = new_XY + neigh
       for el in self.mesh.ELS:
-        plt.fill(old[el.nodes, 0], old[el.nodes, 1], edgecolor='k', fill=False, alpha=0.3)
-        plt.fill(new[el.nodes, 0], new[el.nodes, 1], edgecolor='r', fill=False, alpha=0.3)
+        if (el.E == self.mesh.E1):
+          color = 'C1'
+        else:
+          color = 'C2'
+        plt.fill(old[el.nodes, 0], old[el.nodes, 1], edgecolor='k', color=color, alpha=0.15)
+        plt.fill(new[el.nodes, 0], new[el.nodes, 1], edgecolor='r', color=color, alpha=0.15)
+    plt.plot([0, 1, 1, 0, 0], [0, 0, 1, 1, 0], color='k')
 
     # Set chart title.
-    plt.title("Mesh Deformation under loading", fontsize=19)
+    #plt.title("Mesh Deformation under loading", fontsize=19)
     # Set x axis label.
     plt.xlabel("$x_1$", fontsize=10)
     # Set y axis label.
     plt.ylabel("$x_2$", fontsize=10)
 
     plt.legend()
+    plt.show()
+    #plt.savefig("Periodic_Deformation.png")
 
   def r_vec(self, eps):
     r_vec = np.zeros(2*self.mesh.nnodes)
@@ -251,6 +263,7 @@ class MicroSolver(FEM):
       self.mesh.forces = self.r_vec(eps*mag)
       self.solve()
       C[:, i] = self.sigma(eps*mag)/mag
+      #self.show_deformation(3E2)
 
       self.C = C
     return C
@@ -286,17 +299,31 @@ class MicroSolver(FEM):
 
 
 
-# num_circ = 4
+# # # # # num_circ = 4
 
 # mat_1_params=[10E9, 0.32]
 # mat_2_params=[80E9, 0.22]
-# rel_conc=0.55
+# # mat_1_params = [10E9, 0.36]
+# # mat_2_params = [50E9, 0.26]
+# rel_conc = 0.55
+# #rel_conc = 0.7
 
 # E_1, nu_1 = mat_1_params
 # E_2, nu_2 = mat_2_params
+# # rel_conc=4/9
 
+# # # E_1, nu_1 = [100, 0.2]
+# # # E_2, nu_2 = [300, 0.1]
+# # # n_cands = 9
+# # # Cs = np.zeros((n_cands, 3, 3))
+# # # el_1S = np.array([0, 4, 6, 7])
+# # # el_2s = np.array([1, 2, 3, 5, 8])
 
-# mesh = MicroMesh(96, 96, E_1, E_2, nu_1, nu_2, rel_conc, micro_fun=circles_microstructure)
-# mesh.plot()
+# mesh = MicroMesh(23, 23, E_1, E_2, nu_1, nu_2, rel_conc)
+
 # solver = MicroSolver(mesh)
+# #mesh.plot()
 # print(solver.homogenize())
+# solver.show_deformation(5E2)
+#print(solver.elasticity(E_2, nu_2))
+# #solver.show_periodic_deformation()
